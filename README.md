@@ -88,7 +88,7 @@ This wrapper script automatically handles virtual environment activation, ensuri
 # Start a node with custom parameters
 ./run_qbitcoin.sh start-node --host 0.0.0.0 --port 9334
 
-# Start a node with a seed peer
+# Start a node with an additional seed peer
 ./run_qbitcoin.sh start-node --seed-peer 192.168.1.100:9333
 
 # Stop a running node
@@ -104,8 +104,10 @@ You can run multiple nodes on the same machine for testing by using different po
 ./run_qbitcoin.sh start-node
 
 # Terminal 2: Start the second node on a different port and connect to the first
-./run_qbitcoin.sh start-node --port 9334 --seed-peer 127.0.0.1:9333
+./run_qbitcoin.sh start-node --port 9334
 ```
+
+> **Note:** All nodes automatically connect to the QBitcoin main seed node (195.201.33.112:9333), so you don't need to explicitly specify a seed peer unless you want to connect to a specific additional node.
 
 When starting a node with `--host 0.0.0.0`, it will listen on all available network interfaces, making it accessible from other machines on your network.
 

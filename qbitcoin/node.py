@@ -19,6 +19,11 @@ MAX_PEERS = 8
 PING_INTERVAL = 30  # Seconds between peer pings
 SYNC_INTERVAL = 60  # Seconds between blockchain syncs
 
+# Default seed nodes - production servers that are always online
+DEFAULT_SEED_PEERS = [
+    {"host": "195.201.33.112", "port": 9333}  # Main QBitcoin seed node
+]
+
 class Message:
     """Message types for P2P communication."""
     PING = "ping"
@@ -98,10 +103,17 @@ class Node:
         os.makedirs(data_dir, exist_ok=True)
         os.makedirs(os.path.join(data_dir, "wallets"), exist_ok=True)
         
-        # Add seed peers
-        if seed_peers:
-            for peer_dict in seed_peers:
-                self.peers.add(Peer(peer_dict['host'], peer_dict['port']))
+        # Load existing peers from disk first
+        self._load_peers()
+        
+        # Add seed peers from parameter or defaults
+        seed_peers_to_add = seed_peers if seed_peers else DEFAULT_SEED_PEERS
+        if seed_peers_to_add:
+            for peer_dict in seed_peers_to_add:
+                # Skip adding ourselves as a peer
+                if peer_dict['host'] == self.host and int(peer_dict['port']) == self.port:
+                    continue
+                self.peers.add(Peer(peer_dict['host'], int(peer_dict['port'])))
         
         # Setup server socket
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)

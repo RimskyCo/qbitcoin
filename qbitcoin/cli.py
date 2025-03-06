@@ -244,7 +244,7 @@ def main():
     node_parser = subparsers.add_parser("start-node", help="Start a node")
     node_parser.add_argument("--host", default="0.0.0.0", help="Host to bind to")
     node_parser.add_argument("--port", type=int, default=9333, help="Port to bind to")
-    node_parser.add_argument("--seed-peer", help="Seed peer (host:port)")
+    node_parser.add_argument("--seed-peer", help="Additional seed peer (host:port) - default seed nodes are automatically included")
     
     # Stop node
     subparsers.add_parser("stop-node", help="Stop the node")

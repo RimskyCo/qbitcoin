@@ -12,6 +12,7 @@ import os
 from typing import Dict, List, Any, Set, Optional
 from .blockchain import Blockchain, Block, Transaction
 from .wallet import Wallet, WalletManager
+from datetime import datetime
 
 # Network configuration
 DEFAULT_PORT = 9333
@@ -303,11 +304,14 @@ class Node:
         }
         client_socket.sendall(json.dumps(response).encode('utf-8'))
         
-        # Add peer
-        peer = Peer(message['host'], message['port'])
-        if peer not in self.peers and len(self.peers) < MAX_PEERS:
-            self.peers.add(peer)
-            print(f"Added new peer: {peer}")
+        # Add peer if the message contains host and port
+        if 'host' in message and 'port' in message:
+            peer = Peer(message['host'], message['port'])
+            if peer not in self.peers and len(self.peers) < MAX_PEERS:
+                self.peers.add(peer)
+                print(f"Added new peer: {peer}")
+        else:
+            print("Received ping without host/port information")
     
     def _handle_get_peers(self, client_socket: socket.socket, message: Dict[str, Any]) -> None:
         """Handle a get_peers message."""
@@ -348,16 +352,22 @@ class Node:
         # Convert to Block object
         block = Block.from_dict(block_dict)
         
+        print(f"Received block {block.index} with hash {block.hash[:8]}... from peer")
+        
         # Validate block (simplified)
         if block.index != len(self.blockchain.chain):
+            print(f"Ignoring block {block.index} - expected index {len(self.blockchain.chain)}")
             return  # Ignore block with wrong index
         
         if block.previous_hash != self.blockchain.get_latest_block().hash:
+            print(f"Ignoring block {block.index} - wrong previous hash")
             return  # Ignore block with wrong previous hash
         
         # Add block to blockchain
         self.blockchain.chain.append(block)
-        print(f"Added new block {block.index} from peer")
+        print(f"💠 Added new block {block.index} from peer - blockchain height: {len(self.blockchain.chain)}")
+        print(f"   Block hash: {block.hash}")
+        print(f"   Transactions: {len(block.transactions)} | Timestamp: {datetime.fromtimestamp(block.timestamp)}")
         
         # Save blockchain
         self._save_blockchain()
@@ -433,7 +443,9 @@ class Node:
             client.connect((peer.host, peer.port))
             
             message = {
-                'type': Message.PING
+                'type': Message.PING,
+                'host': self.host,
+                'port': self.port
             }
             
             client.sendall(json.dumps(message).encode('utf-8'))
@@ -516,14 +528,22 @@ class Node:
             
             for peer in self.peers:
                 height = self._get_peer_blockchain_height(peer)
+                print(f"Peer {peer} blockchain height: {height}")
                 if height > max_height:
                     max_height = height
                     best_peer = peer
             
             # If we found a better chain, sync with it
             if best_peer and max_height > len(self.blockchain.chain) - 1:
-                print(f"Found peer with longer blockchain: {best_peer} (height: {max_height})")
-                self._download_blocks(best_peer, len(self.blockchain.chain) - 1, max_height)
+                print(f"🔄 Found peer {best_peer} with longer blockchain (height: {max_height})")
+                print(f"   Downloading {max_height - (len(self.blockchain.chain) - 1)} new blocks...")
+                success = self._download_blocks(best_peer, len(self.blockchain.chain) - 1, max_height)
+                if success:
+                    print(f"✅ Blockchain sync complete - new height: {len(self.blockchain.chain)}")
+                else:
+                    print(f"❌ Blockchain sync failed")
+            else:
+                print(f"Blockchain is up to date (height: {len(self.blockchain.chain) - 1})")
         
         except Exception as e:
             print(f"Error syncing blockchain: {e}")
@@ -589,10 +609,14 @@ class Node:
             
             data = b''.join(chunks)
             if not data:
+                print(f"No data received from peer {peer} when downloading blocks")
                 return False
             
             response_data = json.loads(data.decode('utf-8'))
             if response_data['type'] == Message.BLOCKS and response_data['blocks']:
+                print(f"Received {len(response_data['blocks'])} blocks from peer {peer}")
+                blocks_added = 0
+                
                 # Process blocks
                 for block_dict in response_data['blocks']:
                     block = Block.from_dict(block_dict)
@@ -600,13 +624,19 @@ class Node:
                     # Simple validation
                     if block.index == len(self.blockchain.chain):
                         self.blockchain.chain.append(block)
-                        print(f"Added block {block.index} from peer")
+                        blocks_added += 1
+                        print(f"📦 Added block {block.index} with hash {block.hash[:8]}... from peer {peer}")
+                        print(f"   Transactions: {len(block.transactions)} | Timestamp: {datetime.fromtimestamp(block.timestamp)}")
+                    else:
+                        print(f"⚠️ Skipping block {block.index} - expected index {len(self.blockchain.chain)}")
                 
                 # Save blockchain
                 self._save_blockchain()
-                return True
-            
-            return False
+                print(f"✅ Blockchain update complete - added {blocks_added} blocks, new height: {len(self.blockchain.chain) - 1}")
+                return blocks_added > 0
+            else:
+                print(f"Invalid response from peer {peer} - expected BLOCKS message")
+                return False
         
         except Exception as e:
             print(f"Error downloading blocks: {e}")

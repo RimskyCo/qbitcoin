@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual Environment
+qbitcoin_env/
+
+# pyenv
+.python-version
+
+# dotenv
+.env 

@@ -1,0 +1,6 @@
+argon2-cffi==21.3.0
+pycryptodome==3.15.0
+cryptography>=37.0.0
+pyspx==0.1.0  # SPHINCS+ implementation - requires OpenSSL development headers
+# pysodium>=0.7.0  # Alternative quantum-resistant signatures (not needed with pyspx)
+PyNaCl==1.5.0 

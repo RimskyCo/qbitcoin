@@ -1,4 +1,4 @@
-# QBitcoin - Quantum-Safe Bitcoin Implementation
+# [QBT] QBitcoin - Quantum-Safe Bitcoin Implementation
 
 QBitcoin is a quantum-resistant implementation of a cryptocurrency inspired by Bitcoin. It incorporates several quantum-safe cryptographic primitives to ensure resilience against attacks from quantum computers.
 

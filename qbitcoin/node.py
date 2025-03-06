@@ -108,12 +108,16 @@ class Node:
         
         # Add seed peers from parameter or defaults
         seed_peers_to_add = seed_peers if seed_peers else DEFAULT_SEED_PEERS
+        print(f"Adding {len(seed_peers_to_add)} seed peers from configuration")
         if seed_peers_to_add:
             for peer_dict in seed_peers_to_add:
                 # Skip adding ourselves as a peer
                 if peer_dict['host'] == self.host and int(peer_dict['port']) == self.port:
+                    print(f"Skipping seed peer {peer_dict['host']}:{peer_dict['port']} (matches our address)")
                     continue
-                self.peers.add(Peer(peer_dict['host'], int(peer_dict['port'])))
+                new_peer = Peer(peer_dict['host'], int(peer_dict['port']))
+                self.peers.add(new_peer)
+                print(f"Added seed peer: {new_peer}")
         
         # Setup server socket
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -200,6 +204,11 @@ class Node:
         
         # Load peers from disk
         self._load_peers()
+        
+        # Debug: Print all peers after loading
+        print(f"Loaded {len(self.peers)} peers from disk.")
+        for peer in self.peers:
+            print(f"Peer loaded: {peer}")
         
         # Start threads
         self.server_thread = threading.Thread(target=self._server_loop)
@@ -408,33 +417,41 @@ class Node:
             self._discover_peers()
     
     def _send_ping(self, peer: Peer) -> bool:
-        """Send ping message to peer."""
+        """
+        Send a ping message to a peer.
+        
+        Args:
+            peer: Peer to ping
+            
+        Returns:
+            True if peer is alive, False otherwise
+        """
         try:
+            print(f"Attempting to ping peer: {peer}")
             client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             client.settimeout(5)
             client.connect((peer.host, peer.port))
             
             message = {
-                'type': Message.PING,
-                'host': self.host,
-                'port': self.port,
-                'timestamp': time.time()
+                'type': Message.PING
             }
             
             client.sendall(json.dumps(message).encode('utf-8'))
             
             response = client.recv(1024)
             if not response:
+                print(f"No response from peer: {peer}")
                 return False
             
             response_data = json.loads(response.decode('utf-8'))
             if response_data['type'] == Message.PONG:
-                peer.last_seen = time.time()
+                print(f"Received PONG from peer: {peer}")
                 return True
             
             return False
         
-        except Exception:
+        except Exception as e:
+            print(f"Error pinging peer {peer}: {e}")
             return False
         
         finally:
@@ -443,10 +460,12 @@ class Node:
     def _discover_peers(self) -> None:
         """Discover new peers by querying existing peers."""
         if not self.peers:
+            print("No peers available for discovery")
             return
         
         # Select a random peer
         peer = random.choice(list(self.peers))
+        print(f"Attempting to discover peers through: {peer}")
         
         try:
             client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -461,18 +480,24 @@ class Node:
             
             response = client.recv(1024 * 10)  # 10KB max
             if not response:
+                print(f"No response from peer {peer} during peer discovery")
                 return
             
             response_data = json.loads(response.decode('utf-8'))
             if response_data['type'] == Message.PEERS:
+                print(f"Received {len(response_data['peers'])} peer suggestions from {peer}")
                 for peer_dict in response_data['peers']:
                     new_peer = Peer(peer_dict['host'], peer_dict['port'])
                     if new_peer not in self.peers and len(self.peers) < MAX_PEERS:
                         self.peers.add(new_peer)
                         print(f"Discovered new peer: {new_peer}")
+                    else:
+                        print(f"Skipping peer {new_peer} (already known or MAX_PEERS reached)")
+            else:
+                print(f"Unexpected response type during peer discovery: {response_data['type']}")
         
         except Exception as e:
-            print(f"Error discovering peers: {e}")
+            print(f"Error discovering peers through {peer}: {e}")
         
         finally:
             client.close()

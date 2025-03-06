@@ -130,10 +130,10 @@ class QBitcoinCLI:
         # Parse seed peers
         seed_peers = []
         if seed_peer:
-            host, port = seed_peer.split(":")
+            seed_host, seed_port = seed_peer.split(":")
             seed_peers.append({
-                'host': host,
-                'port': int(port)
+                'host': seed_host,
+                'port': int(seed_port)
             })
         
         # Create and start node

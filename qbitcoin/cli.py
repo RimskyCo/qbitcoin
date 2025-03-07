@@ -9,6 +9,7 @@ import sys
 import argparse
 import json
 import time
+import socket
 from typing import Optional, List, Dict, Any
 
 from .blockchain import Blockchain, Transaction
@@ -148,8 +149,13 @@ class QBitcoinCLI:
         self.node.blockchain = self.blockchain
         
         # Start the node
-        self.node.start()
-        print(f"Node started on {host}:{port}")
+        try:
+            self.node.start()
+            print(f"Node started on {host}:{port}")
+        except Exception as e:
+            print(f"Failed to start node: {e}")
+            self.node = None
+            return
     
     def stop_node(self) -> None:
         """Stop the node."""
@@ -164,6 +170,56 @@ class QBitcoinCLI:
         self.blockchain = self.node.blockchain
         self._save_blockchain()
     
+    def _detect_external_node(self, host="127.0.0.1", port=9333):
+        """
+        Check if there's an external QBitcoin node already running.
+        
+        Args:
+            host: Host to check (default: localhost)
+            port: Port to check (default: 9333)
+            
+        Returns:
+            bool: True if an external node is detected, False otherwise
+        """
+        try:
+            # Try to establish a connection to check if port is in use
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.settimeout(1)
+            result = s.connect_ex((host, port))
+            s.close()
+            
+            # If port is open, a node is likely running
+            if result == 0:
+                # Attempt to send a ping to confirm it's a QBitcoin node
+                client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                client.settimeout(2)
+                client.connect((host, port))
+                
+                # Send a ping message
+                message = {
+                    'type': 'ping'
+                }
+                
+                client.sendall(json.dumps(message).encode('utf-8'))
+                
+                # Try to get a response
+                try:
+                    response = client.recv(1024)
+                    if response:
+                        # Parse response to confirm it's a QBitcoin node
+                        response_data = json.loads(response.decode('utf-8'))
+                        if response_data.get('type') == 'pong':
+                            return True
+                except:
+                    pass
+                finally:
+                    client.close()
+            
+            return False
+        except Exception as e:
+            print(f"Error detecting external node: {e}")
+            return False
+
     def start_mining(self, wallet_name: str) -> None:
         """Start mining with the specified wallet."""
         if self.miner and self.miner.is_mining:
@@ -176,8 +232,42 @@ class QBitcoinCLI:
             print(f"Wallet '{wallet_name}' not found")
             return
         
+        # Check if we already have a node or if an external node is running
+        external_node = False
+        if not self.node or not self.node.running:
+            external_node = self._detect_external_node()
+            
+            if external_node:
+                print("Detected an external QBitcoin node running on port 9333")
+                print("Mining will connect to this existing node")
+            else:
+                print("No node running. Starting a local node first...")
+                # Start a node with default parameters
+                try:
+                    self.start_node()
+                    # Give the node a moment to initialize and connect to peers
+                    print("Waiting for node to initialize and connect to peers...")
+                    time.sleep(3)
+                except Exception as e:
+                    print(f"Warning: Failed to start node - {e}")
+                    print("Mining will continue in offline mode (blocks won't propagate to network).")
+        
         # Create and start miner
         self.miner = Miner(self.blockchain, wallet, data_dir=DATA_DIR)
+        
+        # Link miner to node for block propagation if node is running
+        if (self.node and self.node.running) or external_node:
+            if external_node:
+                print("Mining with external node block propagation enabled.")
+                # If using external node, we'll broadcast differently
+                self.miner.set_external_node("127.0.0.1", 9333)
+            else:
+                print("Mining with network block propagation enabled.")
+                # Hook up miner to broadcast new blocks via node
+                self.miner.set_node(self.node)
+        else:
+            print("Mining in standalone mode (blocks won't propagate to network).")
+        
         self.miner.start_mining()
         print(f"Mining started with rewards going to wallet '{wallet_name}'")
     

@@ -10,26 +10,60 @@ import json
 from typing import Optional
 from .blockchain import Blockchain, Block
 from .wallet import Wallet
+import socket  # Add this import if not already present
 
 class Miner:
-    """QBitcoin miner using Argon2 proof of work."""
+    """QBitcoin miner for creating new blocks."""
     
-    def __init__(self, blockchain: Blockchain, wallet: Wallet, data_dir: str = None):
+    def __init__(self, blockchain: Blockchain, wallet: Wallet, data_dir: str = "data", num_threads: int = None):
         """
-        Initialize the miner.
+        Initialize a miner.
         
         Args:
             blockchain: Blockchain to mine on
             wallet: Wallet to receive mining rewards
-            data_dir: Directory to save blockchain data (optional)
+            data_dir: Directory to save blockchain data
+            num_threads: Number of mining threads (auto-detected if None)
         """
         self.blockchain = blockchain
         self.wallet = wallet
-        self.is_mining = False
-        self.mining_thread: Optional[threading.Thread] = None
         self.data_dir = data_dir
-        # Determine optimal number of parallel mining threads
-        self.num_threads = max(1, multiprocessing.cpu_count() - 1)
+        
+        # Determine optimal number of parallel mining threads if not specified
+        if num_threads is None:
+            self.num_threads = max(1, multiprocessing.cpu_count() - 1)
+        else:
+            self.num_threads = num_threads
+        
+        # Mining thread
+        self.is_mining = False
+        self.mining_thread = None
+        
+        # Node reference for broadcasting blocks (optional)
+        self.node = None
+        self.external_node_host = None
+        self.external_node_port = None
+    
+    def set_node(self, node) -> None:
+        """Set a reference to the node for broadcasting blocks."""
+        self.node = node
+        self.external_node_host = None
+        self.external_node_port = None
+        print("Miner connected to node for block propagation.")
+    
+    def set_external_node(self, host: str, port: int) -> None:
+        """
+        Set an external node for broadcasting blocks.
+        Used when mining with a node started in a different process.
+        
+        Args:
+            host: External node host
+            port: External node port
+        """
+        self.node = None
+        self.external_node_host = host
+        self.external_node_port = port
+        print(f"Miner connected to external node at {host}:{port} for block propagation.")
     
     def start_mining(self) -> None:
         """Start mining in a background thread."""
@@ -93,9 +127,48 @@ class Miner:
                 # Save blockchain after successful mining
                 self._save_blockchain()
                 
+                # Broadcast the new block to the network if connected to a node
+                if self.node and hasattr(self.node, '_broadcast_new_block'):
+                    try:
+                        self.node._broadcast_new_block(new_block)
+                        print(f"Block {new_block.index} broadcast to the network via internal node ✅")
+                    except Exception as e:
+                        print(f"Failed to broadcast block to network via internal node: {e}")
+                # If we have external node details, broadcast to it
+                elif self.external_node_host and self.external_node_port:
+                    try:
+                        self._broadcast_to_external_node(new_block)
+                        print(f"Block {new_block.index} broadcast to the network via external node ✅")
+                    except Exception as e:
+                        print(f"Failed to broadcast block to network via external node: {e}")
+                
             except Exception as e:
                 print(f"Mining error: {e}")
                 time.sleep(5)  # Wait before retrying on error
+                
+    def _broadcast_to_external_node(self, block):
+        """
+        Broadcast a newly mined block to an external node.
+        
+        Args:
+            block: The Block object to broadcast
+        """
+        try:
+            client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            client.settimeout(5)
+            client.connect((self.external_node_host, self.external_node_port))
+            
+            message = {
+                'type': 'new_block',
+                'block': block.to_dict()
+            }
+            
+            client.sendall(json.dumps(message).encode('utf-8'))
+            client.close()
+            return True
+        except Exception as e:
+            print(f"Error broadcasting to external node: {e}")
+            return False
 
 
 def main():
